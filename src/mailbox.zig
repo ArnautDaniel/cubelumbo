@@ -4,6 +4,8 @@ const PriorityQueue = std.PriorityQueue;
 pub const Messages = enum {
     Render,
     Move,
+    ConsoleDraw,
+    CameraFollow,
 };
 
 pub const Message = struct {

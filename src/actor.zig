@@ -15,6 +15,8 @@ pub const ActorType = union(enum) {
     Player: CharActor,
     Item: ItemActor,
     Npc: NpcActor,
+    Console: ConsoleActor,
+    Camera: CameraActor,
 };
 
 pub const ActorControl = struct {
@@ -28,6 +30,16 @@ pub const ActorControl = struct {
             .actors = std.AutoHashMap(u64, *Actor).init(allocator),
             .allocator = allocator,
         };
+    }
+
+    pub fn createCharActor(self: *ActorControl, name: [:0]const u8) !*CharActor {
+        const act: *Actor = try self.createActor(name, ActorType{ .Player = CharActor{} });
+        return &act.type.Player;
+    }
+
+    pub fn createConsole(self: *ActorControl, name: [:0]const u8, lines: [3][:0]const u8) !*ConsoleActor {
+        const act: *Actor = try self.createActor(name, ActorType{ .Console = ConsoleActor{ .lines = lines } });
+        return &act.type.Console;
     }
 
     pub fn createActor(self: *ActorControl, name: [:0]const u8, actorType: ActorType) !*Actor {
@@ -52,6 +64,12 @@ pub const ActorControl = struct {
 
     pub fn getActor(self: *ActorControl, id: u64) ?*Actor {
         return self.actors.get(id);
+    }
+
+    pub fn broadcast_msg(self: *ActorControl, msg_type: mb.Messages, priority: u8) !void {
+        const msg = mb.Message{ .message = msg_type, .priority = priority, .sender = 0 };
+        try self.broadcast(msg);
+        self.runActors();
     }
 
     pub fn broadcast(self: *ActorControl, message: mb.Message) !void {
@@ -82,14 +100,49 @@ pub const ActorControl = struct {
     }
 };
 
-const ItemActor = struct {
+pub const ConsoleActor = struct {
+    posx: i32 = 0,
+    posy: i32 = 0,
+    lines: [3][:0]const u8,
+
+    pub fn draw(self: *ConsoleActor) void {
+        rl.drawRectangle(self.posx, self.posy, 400, 200, .black);
+        for (self.lines, 0..) |line, i| {
+            const n: i32 = @intCast(i);
+            rl.drawText(line, self.posx, self.posy + n * 50, 20, .white);
+        }
+    }
+
+    pub fn addLine(self: *ConsoleActor, str: [:0]const u8) void {
+        self.lines[0] = self.lines[1];
+        self.lines[1] = self.lines[2];
+        self.lines[2] = str;
+    }
+
+    pub fn receive(self: *ConsoleActor, msg: mb.Message) void {
+        switch (msg.message) {
+            .ConsoleDraw => self.draw(),
+            else => {},
+        }
+    }
+};
+
+pub const CameraActor = struct {
+    pub fn receive(self: *CameraActor, msg: mb.Message) void {
+        _ = self;
+        _ = msg;
+        std.debug.print("Reached camera\n", .{});
+    }
+};
+
+pub const ItemActor = struct {
     pub fn receive(self: *ItemActor, msg: mb.Message) void {
         _ = self;
         _ = msg;
         std.debug.print("Reached charactor render\n", .{});
     }
 };
-const NpcActor = struct {
+pub const NpcActor = struct {
     pub fn receive(self: *NpcActor, msg: mb.Message) void {
         _ = self;
         _ = msg;
@@ -124,9 +177,11 @@ pub const CharActor = struct {
     }
 
     pub fn receive(self: *CharActor, msg: mb.Message) void {
-        _ = self;
-        _ = msg;
-        std.debug.print("Reached charactor render\n", .{});
+        switch (msg.message) {
+            .Render => self.render(),
+            .Move => self.move(),
+            else => {},
+        }
     }
 };
 
@@ -156,6 +211,8 @@ const Actor = struct {
                 .Player => |*player| player.receive(msg.?),
                 .Npc => |*npc| npc.receive(msg.?),
                 .Item => |*item| item.receive(msg.?),
+                .Console => |*console| console.receive(msg.?),
+                .Camera => |*camera| camera.receive(msg.?),
             }
         }
     }
